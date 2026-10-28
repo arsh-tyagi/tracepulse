@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tracepulse-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: tracepulse
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - tracepulse-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: tracepulse-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+asyncmy://root:root@mysql:3306/tracepulse
+      INTERNAL_INGEST_KEY: tp-internal-probe-secret
+    ports:
+      - "8000:8000"
+    networks:
+      - tracepulse-net
+
+  probe-daemon:
+    build:
+      context: ./probe-daemon
+      dockerfile: Dockerfile
+    container_name: tracepulse-probe-daemon
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      CONTROL_PLANE_URL: http://backend:8000
+      INTERNAL_INGEST_KEY: tp-internal-probe-secret
+    networks:
+      - tracepulse-net
+
+  mock-target:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.mock
+    container_name: tracepulse-mock-target
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - tracepulse-net
+
+volumes:
+  mysql_data:
+
+networks:
+  tracepulse-net:
+    driver: bridge

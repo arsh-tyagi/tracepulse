@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1
+
+RUN pip install --no-cache-dir fastapi uvicorn
+
+COPY tests/mock_target.py /app/mock_target.py
+
+EXPOSE 8080
+
+CMD ["uvicorn", "mock_target:app", "--host", "0.0.0.0", "--port", "8080"]
