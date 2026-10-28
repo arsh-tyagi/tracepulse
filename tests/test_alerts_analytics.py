@@ -10,14 +10,14 @@ from backend.app.main import app
 from backend.app.database import init_db_engine
 
 @pytest.mark.asyncio
-async def test_phase3_analytics_and_alerts():
+async def test_analytics_and_alerts():
     await init_db_engine()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # 1. Create a monitor
         mon_resp = await client.post("/api/v1/monitors", json={
-            "name": "Phase 3 Analytics Monitor",
+            "name": "Analytics Target",
             "target_url": "https://httpbin.org/get",
             "check_interval_sec": 5,
             "timeout_ms": 3000,
@@ -26,7 +26,7 @@ async def test_phase3_analytics_and_alerts():
         assert mon_resp.status_code == 201
         monitor_id = mon_resp.json()["id"]
 
-        # 2. Ingest 10 sample runs (varying latencies: 20ms, 40ms, 60ms, 120ms, 250ms...)
+        # 2. Ingest sample runs
         checks = []
         for i in range(1, 11):
             checks.append({
@@ -51,7 +51,6 @@ async def test_phase3_analytics_and_alerts():
         sla_data = sla_resp.json()["sla"]
         assert sla_data["24h"]["uptime_percent"] == 100.0
         assert sla_data["24h"]["total_checks"] == 10
-        print("SLA 24h result:", sla_data["24h"])
 
         # 4. Query Percentiles
         perc_resp = await client.get(f"/api/v1/monitors/{monitor_id}/percentiles?hours=24")
@@ -60,14 +59,12 @@ async def test_phase3_analytics_and_alerts():
         assert p_data["sample_count"] == 10
         assert p_data["p50_ms"] > 0
         assert p_data["p99_ms"] >= p_data["p50_ms"]
-        print("Percentiles result:", p_data)
 
-        # 5. Query Chart.js Timeseries
+        # 5. Query Chart Timeseries
         ts_resp = await client.get(f"/api/v1/monitors/{monitor_id}/metrics?limit=10")
         assert ts_resp.status_code == 200
         ts_data = ts_resp.json()["data"]
         assert len(ts_data) == 10
-        print(f"Chart Timeseries Data Points: {len(ts_data)}, latest total: {ts_data[-1]['total_ms']}ms")
 
         # 6. Test Alert Rule & Consecutive Failure Incident Trigger
         rule_resp = await client.post("/api/v1/alerts/rules", json={
@@ -114,7 +111,6 @@ async def test_phase3_analytics_and_alerts():
         assert incidents_resp.status_code == 200
         open_incidents = incidents_resp.json()
         assert any(inc["monitor_id"] == monitor_id and inc["status"] == "OPEN" for inc in open_incidents)
-        print("Alert Incident opened successfully:", open_incidents[0]["trigger_reason"])
 
         # Ingest 1 successful check to trigger resolution
         recovery_check = [{
@@ -136,7 +132,6 @@ async def test_phase3_analytics_and_alerts():
         assert incidents_resolved_resp.status_code == 200
         resolved_incidents = incidents_resolved_resp.json()
         assert any(inc["monitor_id"] == monitor_id and inc["status"] == "RESOLVED" for inc in resolved_incidents)
-        print("Alert Incident resolved successfully!")
 
 if __name__ == "__main__":
-    asyncio.run(test_phase3_analytics_and_alerts())
+    asyncio.run(test_analytics_and_alerts())

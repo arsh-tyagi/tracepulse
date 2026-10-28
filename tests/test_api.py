@@ -4,14 +4,13 @@ from httpx import AsyncClient, ASGITransport
 import sys
 import os
 
-# Add root directory to python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.app.main import app
 from backend.app.database import init_db_engine
 
 @pytest.mark.asyncio
-async def test_full_phase1_flow():
+async def test_monitors_crud_and_probes():
     # 1. Initialize DB
     await init_db_engine()
 
@@ -22,7 +21,6 @@ async def test_full_phase1_flow():
         assert health_resp.status_code == 200
         health_data = health_resp.json()
         assert health_data["status"] == "healthy"
-        print("Health Check:", health_data)
 
         # 2. Create Monitor
         monitor_payload = {
@@ -39,14 +37,12 @@ async def test_full_phase1_flow():
         monitor_data = create_resp.json()
         monitor_id = monitor_data["id"]
         assert monitor_data["name"] == "Cloudflare Test Probe"
-        print(f"Created Monitor ID: {monitor_id}")
 
         # 3. List Monitors
         list_resp = await client.get("/api/v1/monitors")
         assert list_resp.status_code == 200
         monitors_list = list_resp.json()
         assert any(m["id"] == monitor_id for m in monitors_list)
-        print(f"Total Monitors Listed: {len(monitors_list)}")
 
         # 4. Trigger On-Demand Probe (/test)
         test_resp = await client.post(f"/api/v1/monitors/{monitor_id}/test")
@@ -55,7 +51,6 @@ async def test_full_phase1_flow():
         assert test_run["monitor_id"] == monitor_id
         assert test_run["status_code"] in [200, 301, 302]
         assert test_run["total_duration_us"] > 0
-        print(f"Probe Execution Successful! Latency: {test_run['total_duration_us']}us, Status: {test_run['status_code']}")
 
         # 5. Test Batch Ingestion Endpoint (/internal/ingest)
         batch_payload = {
@@ -89,7 +84,6 @@ async def test_full_phase1_flow():
         ingest_resp = await client.post("/api/v1/internal/ingest", json=batch_payload)
         assert ingest_resp.status_code == 201
         assert ingest_resp.json()["ingested_count"] == 2
-        print("Batch Ingestion verified: 2 records stored")
 
         # 6. Create Alert Rule
         rule_payload = {
@@ -102,7 +96,6 @@ async def test_full_phase1_flow():
         }
         rule_resp = await client.post("/api/v1/alerts/rules", json=rule_payload)
         assert rule_resp.status_code == 201
-        print("Alert Rule created successfully:", rule_resp.json()["id"])
 
 if __name__ == "__main__":
-    asyncio.run(test_full_phase1_flow())
+    asyncio.run(test_monitors_crud_and_probes())
